@@ -274,9 +274,18 @@ module ShopifyTheme
     def watch
       puts "Watching current folder: #{Dir.pwd}"
       watcher do |filename, event|
-        filename = filename.gsub("#{Dir.pwd}/", '')
+        filename = filename.gsub("#{Dir.pwd}/theme/", '')
 
         next unless local_assets_list.include?(filename)
+
+        asset_list = ShopifyTheme.asset_list
+        changed_hash = changes(asset_list, true)
+
+        if !(changed_hash[:created].empty? && changed_hash[:deleted].empty? && changed_hash[:changed].empty?)
+          say("There are remote changes which have not been imported locally", :red)
+          exit 1
+        end
+
         action = if [:changed, :new].include?(event)
           :send_asset
         elsif event == :delete
@@ -286,6 +295,8 @@ module ShopifyTheme
         end
 
         send(action, filename, options['quiet'])
+
+        ShopifyTheme.save_sync_list(ShopifyTheme.asset_list)
       end
     end
 
