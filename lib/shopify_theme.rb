@@ -1,4 +1,5 @@
 require 'httparty'
+require 'ap'
 module ShopifyTheme
   include HTTParty
   @@current_api_call_count = 0
@@ -45,16 +46,32 @@ module ShopifyTheme
     "[API Limit: #{@@current_api_call_count || "??"}/#{@@total_api_calls || "??"}]"
   end
 
-
   def self.asset_list
     # HTTParty parser chokes on assest listing, have it noop
     # and then use a rel JSON parser.
     response = shopify.get(path, :parser => NOOPParser)
     manage_timer(response)
+    if response.code == 401
+      puts JSON.parse(response.body)["errors"]
+      exit 1
+    end
 
-    assets = JSON.parse(response.body)["assets"].collect {|a| a['key'] }
-    # Remove any .css files if a .css.liquid file exists
-    assets.reject{|a| assets.include?("#{a}.liquid") }
+    assets = JSON.parse(response.body)["assets"]
+    keys = assets.map { |a| a['key'] }
+    assets.reject{ |a| keys.include?("#{a['key']}.liquid") }
+  end
+
+  def self.asset_keys(asset_list=nil)
+    keys = (asset_list || self.asset_list).collect {|a| a['key'] }
+  end
+
+  def self.read_sync_list
+    return unless File.exists?('sync.json')
+    json = File.read('sync.json')
+  end
+
+  def self.save_sync_list(assets)
+    File.open('sync.json', 'w') {|f| f.write assets.to_json}
   end
 
   def self.get_asset(asset)
@@ -92,6 +109,29 @@ module ShopifyTheme
       puts body
       exit 1
     end
+  end
+
+  def self.read_manifest
+    return JSON.parse(File.read('manifest.json')) if File.exists?('manifest.json')
+
+    {}
+  end
+
+  def self.write_key_digest(key, digest)
+    manifest = read_manifest
+
+    if digest
+      manifest[key] = digest
+    else
+      manifest.delete(key)
+    end
+
+    File.open('manifest.json', 'w') {|f| f.write manifest.to_json}
+    manifest
+  end
+
+  def self.delete_key_digest(key)
+    write_key_digest(key, nil)
   end
 
   def self.config
@@ -150,3 +190,4 @@ module ShopifyTheme
     end
   end
 end
+

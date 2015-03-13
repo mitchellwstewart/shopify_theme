@@ -15,7 +15,8 @@ module ShopifyTheme
     {mimetype: 'application/json', extensions: %w(json), parents: 'text/plain'},
     {mimetype: 'application/js', extensions: %w(map), parents: 'text/plain'},
     {mimetype: 'application/vnd.ms-fontobject', extensions: %w(eot)},
-    {mimetype: 'image/svg+xml', extensions: %w(svg svgz)}
+    {mimetype: 'image/svg+xml', extensions: %w(svg svgz)},
+    {mimetype: 'text/css', extensions: %w(scss css), parents: 'text/plain'}
   ]
 
   def self.configureMimeMagic
@@ -78,7 +79,12 @@ module ShopifyTheme
     method_option :quiet, :type => :boolean, :default => false
     method_option :exclude
     def download(*keys)
-      assets = keys.empty? ? ShopifyTheme.asset_list : keys
+      if keys.empty?
+        asset_list = ShopifyTheme.asset_list
+        assets = ShopifyTheme.asset_keys(asset_list)
+      else
+        assets = keys
+      end
 
       if options['exclude']
         assets = assets.delete_if { |asset| asset =~ Regexp.new(options['exclude']) }
@@ -88,7 +94,133 @@ module ShopifyTheme
         download_asset(asset)
         say("#{ShopifyTheme.api_usage} Downloaded: #{asset}", :green) unless options['quiet']
       end
+
+      ShopifyTheme.save_sync_list(asset_list) if asset_list
+
       say("Done.", :green) unless options['quiet']
+    end
+
+    desc "import", "download the shops changed theme assets"
+    method_option :quiet, :type => :boolean, :default => false
+    def import
+      asset_list = ShopifyTheme.asset_list
+      changed_hash = changes(asset_list)
+
+      assets = (changed_hash[:changed].map(&:first) + changed_hash[:created]).flatten
+      assets.each do |asset|
+        download_asset(asset["key"])
+        say("#{ShopifyTheme.api_usage} Downloaded: #{asset['key']}", :green) unless options['quiet']
+      end
+
+      changed_hash[:deleted].each do |deleted|
+        File.delete(File.join("theme", key))
+        say("Deleted: #{deleted['key']}", :red) unless options['quiet']
+      end
+
+      ShopifyTheme.save_sync_list(asset_list)
+
+      say("Done.", :green) unless options['quiet']
+    end
+
+    desc "export", "upload changes to local theme assets and delete removed files"
+    method_option :quiet, :type => :boolean, :default => false
+    method_option "dry-run".to_sym, :type => :boolean, :default => false
+    def export
+      asset_list = ShopifyTheme.asset_list
+      changed_hash = changes(asset_list, true)
+
+      if !(changed_hash[:created].empty? && changed_hash[:deleted].empty? && changed_hash[:changed].empty?)
+        say("There are remote changes which have not been imported locally", :red)
+        exit 1
+      end
+
+      keys = ShopifyTheme.asset_keys(asset_list)
+      local_keys = local_assets_list
+
+      # Only delete files on remote that are not present locally
+      (keys - local_keys).each do |key|
+        delete_asset(key, options['quiet'], options['dry-run']) unless ShopifyTheme.ignore_files.any? { |regex| regex =~ key }
+      end
+
+      cached_manifest = ShopifyTheme.read_manifest
+
+      # Files present on remote and present locally that have changed get overridden
+      local_keys.each do |asset|
+        send_asset(asset, options['quiet'], options['dry-run'], cached_manifest)
+      end
+
+      # Grab a new copy of the asset list and save it as the current sync file
+      ShopifyTheme.save_sync_list(ShopifyTheme.asset_list)
+
+      say("Done.", :green) unless options['quiet']
+    end
+
+
+    desc "changes", "Check the changes for the shops current theme assets"
+    method_option :quiet, :type => :boolean, :default => false
+    def changes(asset_list=nil, quiet=false)
+      json = ShopifyTheme.read_sync_list
+      prev_assets = JSON.parse(json) if json
+      prev_assets ||= []
+
+      new_assets = asset_list
+      new_assets ||= ShopifyTheme.asset_list
+
+      new_hash = {}
+      new_assets.each {|new_asset| new_hash[new_asset["key"]] = new_asset }
+
+      prev_hash = {}
+      prev_assets.each {|prev_asset| prev_hash[prev_asset["key"]] = prev_asset }
+
+      changed_assets = []
+      deleted_assets = []
+      prev_assets.each do |prev_asset|
+        if new_asset = new_hash[prev_asset["key"]]
+          tmp_new_asset = new_asset.dup
+          tmp_new_asset.delete("public_url")
+          tmp_prev_asset = prev_asset.dup
+          tmp_prev_asset.delete("public_url")
+          changed_assets << [prev_asset, new_asset] if tmp_prev_asset != tmp_new_asset
+        else
+          deleted_assets << prev_asset
+        end
+      end
+
+      created_assets = []
+      new_assets.each do |new_asset|
+        unless prev_hash[new_asset["key"]]
+          created_assets << new_asset
+        end
+      end
+
+      changes = {
+        changed: changed_assets,
+        deleted: deleted_assets,
+        created: created_assets
+      }
+
+      unless options['quiet'] || quiet
+        say("\nChanged:\n\n") unless changes[:changed].empty?
+        changes[:changed].each do |changed|
+          say("  #{changed.first['key']}", :yellow)
+        end
+
+        say("\nCreated:\n\n") unless changes[:created].empty?
+        changes[:created].each do |created|
+          say("  #{created['key']}", :green)
+        end
+
+        say("\nDeleted:\n\n") unless changes[:deleted].empty?
+        changes[:deleted].each do |deleted|
+          say("  #{deleted['key']}", :red)
+        end
+
+        if changes[:changed].empty? && changes[:created].empty? && changes[:deleted].empty?
+          say("\nNo changes.", :green)
+        end
+      end
+
+      changes
     end
 
     desc "open", "open the store in your browser"
@@ -115,7 +247,7 @@ module ShopifyTheme
       if ask("Continue? (Y/N): ") == "Y"
         # only delete files on remote that are not present locally
         # files present on remote and present locally get overridden anyway
-        remote_assets = keys.empty? ? (ShopifyTheme.asset_list - local_assets_list) : keys
+        remote_assets = keys.empty? ? (ShopifyTheme.asset_keys - local_assets_list) : keys
         remote_assets.each do |asset|
           delete_asset(asset, options['quiet']) unless ShopifyTheme.ignore_files.any? { |regex| regex =~ asset }
         end
@@ -197,8 +329,10 @@ module ShopifyTheme
     end
 
     def local_files
-      Dir.glob(File.join('**', '*')).reject do |f|
-        File.directory?(f)
+      Dir.chdir('theme') do
+        Dir.glob(File.join('**', '*')).reject do |f|
+          File.directory?(f)
+        end
       end
     end
 
@@ -214,38 +348,59 @@ module ShopifyTheme
         content = Base64.decode64(asset['attachment'])
         format = "w+b"
       end
+      digest = Digest::SHA256.hexdigest(content)
+      ShopifyTheme.write_key_digest(key, digest)
 
-      FileUtils.mkdir_p(File.dirname(key))
-      File.open(key, format) {|f| f.write content} if content
+      FileUtils.mkdir_p(File.join('theme', File.dirname(key)))
+      File.open(File.join('theme', key), format) {|f| f.write content} if content
     end
 
-    def send_asset(asset, quiet=false)
+    def send_asset(asset, quiet=false, dry_run=false, manifest=nil)
       return unless valid?(asset)
       data = {:key => asset}
-      content = File.read(asset)
+      content = File.read(File.join('theme', asset))
       if binary_file?(asset) || ShopifyTheme.is_binary_data?(content)
-        content = File.open(asset, "rb") { |io| io.read }
+        content = File.open(File.join('theme', asset), "rb") { |io| io.read }
         data.merge!(:attachment => Base64.encode64(content))
       else
         data.merge!(:value => content)
+      end
+
+      digest = Digest::SHA256.hexdigest(content)
+      if manifest && manifest[asset] == digest
+        say("[#{timestamp}] Skipped: #{asset}", :yellow) unless quiet
+        return
+      end
+
+      if dry_run
+        say("[#{timestamp}] Uploaded: #{asset}", :green) unless quiet
+        return
       end
 
       response = show_during("[#{timestamp}] Uploading: #{asset}", quiet) do
         ShopifyTheme.send_asset(data)
       end
       if response.success?
+        ShopifyTheme.write_key_digest(asset, digest)
         say("[#{timestamp}] Uploaded: #{asset}", :green) unless quiet
       else
         report_error(Time.now, "Could not upload #{asset}", response)
       end
     end
 
-    def delete_asset(key, quiet=false)
+    def delete_asset(key, quiet=false, dry_run=false)
       return unless valid?(key)
+
+      if dry_run
+        say("[#{timestamp}] Removed: #{key}", :red) unless quiet
+        return
+      end
+
       response = show_during("[#{timestamp}] Removing: #{key}", quiet) do
         ShopifyTheme.delete_asset(key)
       end
       if response.success?
+        ShopifyTheme.delete_key_digest(key)
         say("[#{timestamp}] Removed: #{key}", :green) unless quiet
       else
         report_error(Time.now, "Could not remove #{key}", response)
