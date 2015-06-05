@@ -16,7 +16,8 @@ module ShopifyTheme
     {mimetype: 'application/js', extensions: %w(map), parents: 'text/plain'},
     {mimetype: 'application/vnd.ms-fontobject', extensions: %w(eot)},
     {mimetype: 'image/svg+xml', extensions: %w(svg svgz)},
-    {mimetype: 'text/css', extensions: %w(scss css), parents: 'text/plain'}
+    {mimetype: 'text/css', extensions: %w(scss css), parents: 'text/plain'},
+    {mimetype: 'application/font-woff2', extensions: %w(woff2)}
   ]
 
   def self.configureMimeMagic
@@ -281,9 +282,11 @@ module ShopifyTheme
         asset_list = ShopifyTheme.asset_list
         changed_hash = changes(asset_list, true)
 
-        if !(changed_hash[:created].empty? && changed_hash[:deleted].empty? && changed_hash[:changed].empty?)
-          say("There are remote changes which have not been imported locally", :red)
-          exit 1
+        unless ENV['UNSAFE'].present?
+          if !(changed_hash[:created].empty? && changed_hash[:deleted].empty? && changed_hash[:changed].empty?)
+            say("There are remote changes which have not been imported locally", :red)
+            exit 1
+          end
         end
 
         action = if [:changed, :new].include?(event)
