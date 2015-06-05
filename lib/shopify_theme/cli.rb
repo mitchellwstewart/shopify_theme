@@ -282,7 +282,7 @@ module ShopifyTheme
         asset_list = ShopifyTheme.asset_list
         changed_hash = changes(asset_list, true)
 
-        unless ENV['UNSAFE'].present?
+        if ENV['UNSAFE'].nil?
           if !(changed_hash[:created].empty? && changed_hash[:deleted].empty? && changed_hash[:changed].empty?)
             say("There are remote changes which have not been imported locally", :red)
             exit 1
