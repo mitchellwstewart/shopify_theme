@@ -114,8 +114,11 @@ module ShopifyTheme
       end
 
       changed_hash[:deleted].each do |deleted|
-        File.delete(File.join("theme", key))
-        say("Deleted: #{deleted['key']}", :red) unless options['quiet']
+        filename = File.join("theme", deleted['key'])
+        if File.exists?(filename)
+          File.delete(filename)
+          say("Deleted: #{deleted['key']}", :red) unless options['quiet']
+        end
       end
 
       ShopifyTheme.save_sync_list(asset_list)
