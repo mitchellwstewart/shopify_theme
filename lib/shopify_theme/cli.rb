@@ -277,10 +277,17 @@ module ShopifyTheme
     method_option :keep_files, :type => :boolean, :default => false
     def watch
       puts "Watching current folder: #{Dir.pwd}"
+      cached_local_assets_list = local_assets_list.dup
+
+
       watcher do |filename, event|
         filename = filename.gsub("#{Dir.pwd}/theme/", '')
 
-        next unless local_assets_list.include?(filename)
+        if event == :delete
+          next unless cached_local_assets_list.include?(filename) || filename.match(/^(assets|snippets|templates|config|layout|locales)\//)
+        else
+          next unless local_assets_list.include?(filename)
+        end
 
         asset_list = ShopifyTheme.asset_list
         changed_hash = changes(asset_list, true)
@@ -301,7 +308,7 @@ module ShopifyTheme
         end
 
         send(action, filename, options['quiet'])
-
+        cached_local_assets_list = local_assets_list.dup
         ShopifyTheme.save_sync_list(ShopifyTheme.asset_list)
       end
     end
