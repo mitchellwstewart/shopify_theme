@@ -276,11 +276,17 @@ module ShopifyTheme
     method_option :quiet, :type => :boolean, :default => false
     method_option :keep_files, :type => :boolean, :default => false
     def watch
-      puts "Watching current folder: #{Dir.pwd}"
+      say("Watching current folder: #{Dir.pwd}", :blue)
       cached_local_assets_list = local_assets_list.dup
+      current_branch = branch
 
 
       watcher do |filename, event|
+        if branch != current_branch
+          say("The repository branch has changed", :red)
+          exit 1
+        end
+
         filename = filename.gsub("#{Dir.pwd}/theme/", '')
 
         if event == :delete
@@ -327,8 +333,21 @@ module ShopifyTheme
 
     protected
 
+    def branch
+      `git rev-parse --abbrev-ref HEAD`.chomp
+    end
+
     def config
-      @config ||= YAML.load_file 'config.yml'
+      return @config if defined?(@config)
+
+      @config = YAML.load_file('config.yml')[branch]
+
+      if !@config
+        say("There is no configuration for the current branch #{branch}", :red)
+        exit 1
+      end
+
+      @config
     end
 
     def shop_theme_url

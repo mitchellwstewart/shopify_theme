@@ -134,9 +134,17 @@ module ShopifyTheme
     write_key_digest(key, nil)
   end
 
+  def self.branch
+    `git rev-parse --abbrev-ref HEAD`.chomp
+  end
+
   def self.config
     @config ||= if File.exist? 'config.yml'
-      config = YAML.load(File.read('config.yml'))
+      config = YAML.load(File.read('config.yml'))[branch]
+      if !config
+        puts "There is no configuration for the current branch #{branch} in config.yml"
+        exit 1
+      end
       config
     else
       puts "config.yml does not exist!" unless test?
