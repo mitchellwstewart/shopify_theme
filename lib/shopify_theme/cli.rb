@@ -126,6 +126,31 @@ module ShopifyTheme
       say("Done.", :green) unless options['quiet']
     end
 
+    desc "init", "Setup the sync.json and manifest.json"
+    method_option :quiet, :type => :boolean, :default => false
+    def init
+      say("Saving asset list to sync.json", :green) unless options['quiet']
+      asset_list = ShopifyTheme.asset_list
+      ShopifyTheme.save_sync_list(asset_list)
+
+      say("Saving local manifest", :green) unless options['quiet']
+      local_keys = local_assets_list
+      local_keys.each do |asset|
+        next unless valid?(asset)
+        data = {:key => asset}
+        content = File.read(File.join('theme', asset))
+        if binary_file?(asset) || ShopifyTheme.is_binary_data?(content)
+          content = File.open(File.join('theme', asset), "rb") { |io| io.read }
+          data.merge!(:attachment => Base64.encode64(content))
+        else
+          data.merge!(:value => content)
+        end
+        digest = Digest::SHA256.hexdigest(content)
+        ShopifyTheme.write_key_digest(asset, digest)
+      end
+      say("Done", :green) unless options['quiet']
+    end
+
     desc "export", "upload changes to local theme assets and delete removed files"
     method_option :quiet, :type => :boolean, :default => false
     method_option "dry-run".to_sym, :type => :boolean, :default => false
