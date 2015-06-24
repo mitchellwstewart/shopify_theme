@@ -129,28 +129,15 @@ module ShopifyTheme
     desc "init", "Setup the sync.json and manifest.json"
     method_option :quiet, :type => :boolean, :default => false
     def init
-      say("Saving asset list to sync.json", :green) unless options['quiet']
       asset_list = ShopifyTheme.asset_list
-      ShopifyTheme.save_sync_list(asset_list)
-
-=begin
-      say("Saving local manifest", :green) unless options['quiet']
-      local_keys = local_assets_list
-      local_keys.each do |asset|
-        next unless valid?(asset)
-        data = {:key => asset}
-        content = File.read(File.join('theme', asset))
-        if binary_file?(asset) || ShopifyTheme.is_binary_data?(content)
-          content = File.open(File.join('theme', asset), "rb") { |io| io.read }
-          data.merge!(:attachment => Base64.encode64(content))
-        else
-          data.merge!(:value => content)
-        end
-        digest = Digest::SHA256.hexdigest(content)
-        ShopifyTheme.write_key_digest(asset, digest)
+      assets = ShopifyTheme.asset_keys(asset_list)
+      assets.each do |asset|
+        init_asset(asset["key"])
+        say("#{ShopifyTheme.api_usage} Initializing: #{asset['key']}", :green) unless options['quiet']
       end
-=end
-      say("Done", :green) unless options['quiet']
+
+      ShopifyTheme.save_sync_list(asset_list)
+      say("Done.", :green) unless options['quiet']
     end
 
     desc "export", "upload changes to local theme assets and delete removed files"
@@ -404,6 +391,20 @@ module ShopifyTheme
           File.directory?(f)
         end
       end
+    end
+
+    def init_asset(key)
+      return unless valid?(key)
+      notify_and_sleep("Approaching limit of API permits. Naptime until more permits become available!") if ShopifyTheme.needs_sleep?
+      asset = ShopifyTheme.get_asset(key)
+      if asset['value']
+        # For CRLF line endings
+        content = asset['value'].gsub("\r", "")
+      elsif asset['attachment']
+        content = Base64.decode64(asset['attachment'])
+      end
+      digest = Digest::SHA256.hexdigest(content)
+      ShopifyTheme.write_key_digest(key, digest)
     end
 
     def download_asset(key)
