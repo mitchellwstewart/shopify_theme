@@ -133,6 +133,7 @@ module ShopifyTheme
       asset_list = ShopifyTheme.asset_list
       ShopifyTheme.save_sync_list(asset_list)
 
+=begin
       say("Saving local manifest", :green) unless options['quiet']
       local_keys = local_assets_list
       local_keys.each do |asset|
@@ -148,6 +149,7 @@ module ShopifyTheme
         digest = Digest::SHA256.hexdigest(content)
         ShopifyTheme.write_key_digest(asset, digest)
       end
+=end
       say("Done", :green) unless options['quiet']
     end
 

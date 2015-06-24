@@ -46,6 +46,8 @@ module ShopifyTheme
     "[API Limit: #{@@current_api_call_count || "??"}/#{@@total_api_calls || "??"}]"
   end
 
+  # This is the remote asset list, basically a listing of all of the files
+  # in the theme currently uploaded to Shopify
   def self.asset_list
     # HTTParty parser chokes on assest listing, have it noop
     # and then use a rel JSON parser.
@@ -65,13 +67,18 @@ module ShopifyTheme
     keys = (asset_list || self.asset_list).collect {|a| a['key'] }
   end
 
+  # The sync list or sync.json is an unmodified copy of the remote
+  # asset list. Basically it is used to quickly diff against the
+  # the server so you can know what the last version of the remote assets
+  # were. So if you compare the asset_list (remote) to the sync_list (local)
+  # you'll know what changed on the remote since you last checked.
   def self.read_sync_list
     return unless File.exists?('sync.json')
     json = File.read('sync.json')
   end
 
   def self.save_sync_list(assets)
-    File.open('sync.json', 'w') {|f| f.write assets.to_json}
+    File.open('sync.json', 'w') {|f| f.write JSON.pretty_generate(assets)}
   end
 
   def self.get_asset(asset)
@@ -111,6 +118,15 @@ module ShopifyTheme
     end
   end
 
+
+  # The manifest.json is a key=value where the key is the name of the
+  # asset and value is a digest of the content. This manifest file is
+  # updated (via write_key_digest or delete_key_digest) when (1) a file
+  # is downloaded (2) a file is deleted or (3) a file is uploaded
+  #
+  # The only thing this is used for is to decide what assets that should
+  # be uploaded can be skipped (in send_asset)
+  #
   def self.read_manifest
     return JSON.parse(File.read('manifest.json')) if File.exists?('manifest.json')
 
@@ -126,7 +142,7 @@ module ShopifyTheme
       manifest.delete(key)
     end
 
-    File.open('manifest.json', 'w') {|f| f.write manifest.to_json}
+    File.open('manifest.json', 'w') {|f| f.write JSON.pretty_generate(manifest)}
     manifest
   end
 
