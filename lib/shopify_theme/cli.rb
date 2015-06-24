@@ -131,9 +131,13 @@ module ShopifyTheme
     def init
       asset_list = ShopifyTheme.asset_list
       assets = ShopifyTheme.asset_keys(asset_list)
+      if options['exclude']
+        assets = assets.delete_if { |asset| asset =~ Regexp.new(options['exclude']) }
+      end
+
       assets.each do |asset|
-        init_asset(asset["key"])
-        say("#{ShopifyTheme.api_usage} Initializing: #{asset['key']}", :green) unless options['quiet']
+        say("#{ShopifyTheme.api_usage} Initializing: #{asset}", :green) unless options['quiet']
+        init_asset(asset)
       end
 
       ShopifyTheme.save_sync_list(asset_list)
