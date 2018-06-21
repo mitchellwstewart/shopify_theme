@@ -323,7 +323,7 @@ module ShopifyTheme
           end
         end
 
-        action = if [:changed, :new].include?(event)
+        action = if [:updated, :new].include?(event)
           :send_asset
         elsif event == :delete
           :delete_asset
@@ -377,7 +377,7 @@ module ShopifyTheme
     private
 
     def watcher
-      FileWatcher.new(Dir.pwd).watch() do |filename, event|
+      Filewatcher.new(Dir.pwd).watch() do |filename, event|
         yield(filename, event)
       end
     end
