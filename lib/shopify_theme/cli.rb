@@ -443,7 +443,7 @@ module ShopifyTheme
 
       digest = Digest::SHA256.hexdigest(content)
       if manifest && manifest[asset] == digest
-        say("[#{timestamp}] Skipped: #{asset}", :yellow) unless quiet
+        #say("[#{timestamp}] Skipped: #{asset}", :yellow) unless quiet
         return
       end
 
